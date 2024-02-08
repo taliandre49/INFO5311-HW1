@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://d3js.org/d3.v6.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+    <meta charset="utf-8">
+    <title>San Francisco Municipal Trees</title>
+    <style>
+        .container {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr)); 
+            grid-template-rows: repeat(2, auto); 
+            gap: 2em;
+            margin: 0; 
+        }
+
+        .chart-container {
+            width: 100%; 
+            height: 100%; 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+        }
+
+        .chart {
+            background-color: #f5f5f5;
+            width: 100%; 
+            height: 100%; 
+        }
+
+        svg {
+            background-color: transparent;
+        }
+
+        .bar {
+            fill: steelblue;
+        }
+
+        .label {
+            font-family: sans-serif;
+            font-size: 14px;
+        }
+        .neighborhoods {
+            fill: lightgrey;
+        }
+
+        .outline {
+            fill: none;
+            stroke: black;
+            stroke-width: 1px;
+        }
+
+        .graticule {
+            fill: none;
+            stroke: grey;
+            stroke-width: 1px;
+        }
+       .text{
+            text-align: center;
+            margin-bottom: 2em;
+        }
+        .caption{
+        display: flex;
+        font-size: smaller;
+        margin-bottom: 1em;
+        margin-left: 2em;
+
+        }
+        .background-color{
+            background-color:#f5f5ff;
+        }
+    </style>
+</head>
+<body class = "background-color">
+    <div class = "text">
+        <h1>Visualization of San Francisco Municipal Trees:</h1>
+        <h3> Which decade did it best?</h3>
+        <p>Natalia Jordan (naj46)</p>
+    </div>
+    <cite class= "caption"> Map of San Francisco with Dot reprenting a Tree and the Color the decade it was planted:</cite>
+    <div class="container">
+        <div class="chart-container"><svg width="750" height="450" id="SFmap"></svg></div>
+        <div class="chart-container"><svg width ="750" height ="450" id="dchart" ></svg></div>
+        <div class="chart-container"><svg width="750" height="300" id="population-chart"></svg></div>
+        <div class="chart-container"><svg width="750" height="300" id="CO2"></svg></div>
+    </div>
+
+    <script>
+        const svg = d3.select("#SFmap");
+        const width2 = svg.attr("width");
+        const height2 = svg.attr("height");
+        const margin2 = { top: 10, right: 0, bottom: 10, left: 20 };
+        const mapWidth = width2 - margin2.left - margin2.right;
+        const mapHeight = height2 - margin2.top - margin2.bottom;
+        const map = svg.append("g")
+
+
+    //data provided by:  https://gist.github.com/cdolek/d08cac2fa3f6338d84ea then altered to topojson format
+    d3.json("SF-Neighborhoods.geo.topojson").then( (data) =>{
+        var sanFrancisco = topojson.feature(data, data.objects.data);
+        var sanFranciscoMesh = topojson.mesh(data, data.objects.data);
+        var projection = d3.geoAlbers()
+            .center([0, 37.77])  // Latitude and longitude of the center of San Francisco
+            .rotate([122.42, 0])  // Rotation to bring San Francisco to the center of the map
+            .parallels([35, 45])  // Standard parallels for the Albers projection
+            .scale(50000)         // Scale factor for the map
+            .translate([mapWidth / 2, mapHeight / 2]) // Translation to center the map
+            .fitSize([mapWidth, mapHeight], sanFrancisco);
+        var path = d3.geoPath().projection(projection);
+        let graticule = d3.geoGraticule10();
+
+        map.append("path").attr("class", "graticule").attr("d", path(graticule));
+
+
+        let neighborhoodpaths = map.selectAll("path.neighborhoods").data(sanFrancisco.features)
+            .join("path")
+            .attr("class", "neighborhoods")
+            .attr("note", d => d.id)
+            .attr("d", path)
+
+        map.append("path").datum(sanFranciscoMesh)
+            .attr("class", "outline")
+            .attr("d", path);
+
+
+        // data provided by teacher, filtered for further use:
+
+        d3.csv("Street_Tree_List-2022-01-30_REALLY_FILTERED.csv").then((treeData) => {
+        
+                treeData.forEach((tree) => {
+                    const [x, y] = projection([parseFloat(tree.Longitude), parseFloat(tree.Latitude)]);
+                    tree.x = x;
+                    tree.y = y;
+                    tree.decade = getDecade(tree.PlantDate); // Assuming the column is named "PlantDate"
+                });
+
+                // Define a color scale for decades
+                const colorScale = d3.scaleOrdinal()
+                    .domain(["1950s", "1960s", "1970s", "1980s", "1990s", "2000s", "2010s", "2020s"])
+                    .range(["#ff0000", "#ff7f00", "#ffff00", "#7fff00", "#0097ff","#5a00ff","#ff00cc", "#000080"]);
+                   
+
+                // Append circles for each tree on the map
+                map.selectAll("circle")
+                    .data(treeData)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", (d) => d.x)
+                    .attr("cy", (d) => d.y)
+                    .attr("r", 4) 
+                    .style("opacity", 0.8)
+                    .style("fill", (d) => colorScale(d.decade));
+
+                // Add a legend
+                const legend = map.append("g")
+                    .attr("transform", "translate(10,10)");
+
+                legend.selectAll("rect")
+                    .data(colorScale.domain())
+                    .enter()
+                    .append("rect")
+                    .attr("x", 0)
+                    .attr("y", (d, i) => i * 20)
+                    .attr("width", 15)
+                    .attr("height", 15)
+                    .style("fill", (d) => colorScale(d));
+
+                legend.selectAll("text")
+                    .data(colorScale.domain())
+                    .enter()
+                    .append("text")
+                    .attr("x", 20)
+                    .attr("y", (d, i) => i * 20 + 10)
+                    .text((d) => d);
+
+    // DECADE BAR GRAPH:
+
+        const margin = { top: 20, right: 20, bottom: 50, left: 70 };
+        const chart = d3.select("#dchart");
+        const width = +chart.attr("width");
+        const height = +chart.attr("height");
+        const chartWidth = width - margin.left - margin.right;
+        const chartHeight = height - margin.top - margin.bottom;
+        const barChart = chart.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const decadeCounts = d3.rollup(treeData, v => v.length, d => getDecade(d.PlantDate));
+        const countsArray = Array.from(decadeCounts, ([decade, count]) => ({ decade, count }))
+                            .sort((a, b) => parseInt(a.decade) - parseInt(b.decade));
+
+        const xScale = d3.scaleBand()
+                        .domain(countsArray.map(d => d.decade))
+                        .range([0, chartWidth])
+                        .padding(0.1);
+
+        const yScale = d3.scaleLinear()
+                        .domain([0, d3.max(countsArray, d => d.count)])
+                        .nice()
+                        .range([chartHeight, 0]);
+
+        barChart.append("g")
+                .attr("transform", `translate(0,${chartHeight})`)
+                .call(d3.axisBottom(xScale));
+
+        barChart.append("g")
+                .call(d3.axisLeft(yScale));
+
+        // Add x-axis label
+        chart.append("text")
+            .attr("transform", `translate(${width / 2 + 65},${height - margin.bottom / 3})`)
+            .style("text-anchor", "middle")
+            .text("Decade");
+
+        // Add y-axis label
+        chart.append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", margin.left / 3 - 10 )
+            .attr("x", 0 - (height / 2 - 10))
+            .style("text-anchor", "middle")
+            .text("Trees Planted");
+
+        // Add labels on top of the bars
+        barChart.selectAll(".bar-label")
+                .data(countsArray)
+                .enter()
+                .append("text")
+                .attr("class", "bar-label")
+                .attr("x", d => xScale(d.decade) + xScale.bandwidth() / 2)
+                .attr("y", d => yScale(d.count) - 5)
+                .attr("text-anchor", "middle")
+                .text(d => d3.format(',')(d.count));
+        // Add bars
+        barChart.selectAll(".bar")
+                .data(countsArray)
+                .enter()
+                .append("rect")
+                .attr("class", "bar")
+                .attr("x", d => xScale(d.decade))
+                .attr("y", d => yScale(d.count))
+                .attr("width", xScale.bandwidth())
+                .attr("height", d => chartHeight - yScale(d.count))
+                .style("fill", (d) => colorScale(d.decade))
+                .attr("stroke", "black")
+                .attr("stroke-width", .5);
+
+
+            });
+
+            // Function to classify the planting date into decades
+            function getDecade(plantDate) {
+                if (plantDate == undefined){
+                    return "This shouldnt occur: Unknown";
+                }
+                const year = new Date(plantDate).getFullYear();
+                return Math.floor(year / 10) * 10 + "s";
+            
+            }
+
+
+
+        });
+
+    </script>
+   <script>
+    //Data Sourced from: https://worldpopulationreview.com/us-cities/san-francisco-ca-population
+    d3.csv("sanfran-pop-data").then((data) => {
+        data.forEach((d) => {
+            d.year = d.year;
+            d.population = Number(d.population);
+            d.growth = Number(d.growth);
+        });
+        const margin = { top: 20, right: 10, bottom: 50, left: 80 };
+        const svg = d3.select("#population-chart");
+        const width = +svg.attr("width") - margin.left - margin.right;
+        const height = +svg.attr("height") - margin.top - margin.bottom;
+
+        const chart = svg.append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const xScale = d3.scaleLinear()
+            .domain([d3.min(data, (d) => d.year), d3.max(data, (d) => d.year)])
+            .range([0, width]);
+
+        const yScale = d3.scaleLinear()
+            .domain([0, d3.max(data, (d) => d.population)])
+            .nice()
+            .range([height, 0]);
+
+        chart.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(xScale).tickFormat(d3.format("")));
+        
+        chart.append("g")
+            .call(d3.axisLeft(yScale));
+
+        chart.append("path")
+            .datum(data)
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 2)
+            .attr("d", d3.line()
+                .x((d) => xScale(d.year))
+                .y((d) => yScale(d.population))
+                .curve(d3.curveLinear));
+
+        chart.append("text")
+            .attr("x", width / 2)
+            .attr("y", height + margin.bottom - 10)
+            .attr("text-anchor", "middle")
+            .text("Year");
+
+        // Add y-axis label
+        chart.append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("x", -height / 2)
+            .attr("y", -margin.left-5)
+            .attr("dy", "1em")
+            .style("text-anchor", "middle")
+            .text("Population");
+    });
+</script>
+    <script>
+        // data sourced from https://sfgov.org/scorecards/environment/greenhouse-gas-emissions
+        d3.csv("San_Francisco_Communitywide_Greenhouse_Gas_Inventory_20240207.csv").then((data) => {
+            // Group data by Calendar_Year and calculate total CO2 emissions for each year
+            const emissionsByYear = d3.rollup(data, 
+                v => d3.sum(v, d => Number(d.Emissions_mtCO2e)), 
+                d => Number(d.Calendar_Year));
+
+            const emissionsArray = Array.from(emissionsByYear, ([year, emissions]) => ({ year, emissions }));
+
+
+            const margin = { top: 20, right: 10, bottom: 50, left: 80 };
+            const svg = d3.select("#CO2")
+            const width_C = svg.attr("width");
+            const height_C= svg.attr("height");
+            const width = width_C - margin2.left - margin2.right;
+            const height = height_C - margin2.top + margin2.bottom;
+            const xScale = d3.scaleBand()
+                .domain(emissionsArray.map(d => d.year))
+                .range([margin.left, width - margin.right])
+                .padding(0.1);
+
+            const yScale = d3.scaleLinear()
+                .domain([0, d3.max(emissionsArray, d => d.emissions)])
+                .nice()
+                .range([height - margin.bottom, margin.top]);
+
+            // Draw x-axis
+            svg.append("g")
+                .attr("transform", `translate(0,${height - margin.bottom})`)
+                .call(d3.axisBottom(xScale));
+
+            // Draw y-axis
+            svg.append("g")
+                .attr("transform", `translate(${margin.left},0)`)
+                .call(d3.axisLeft(yScale));
+
+            // Draw the line graph
+            svg.append("path")
+                .datum(emissionsArray)
+                .attr("fill", "none")
+                .attr("stroke", "darkgreen")
+                .attr("stroke-width", 2)
+                .attr("d", d3.line()
+                    .x(d => xScale(d.year) + xScale.bandwidth() / 2)
+                    .y(d => yScale(d.emissions))
+                    .curve(d3.curveLinear)
+                );
+
+            svg.append("text")
+                    .attr("x", (mapWidth / 2)+ 45)
+                    .attr("y", height-5)
+                    .attr("text-anchor", "middle")
+                    .text("Year");   
+
+            // Add y-axis label
+            svg.append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("x", -mapHeight / 2 + 80)
+                    .attr("y", -margin2.left +15)
+                    .attr("dy", "1em")
+                    .style("text-anchor", "middle")
+                    .text("CO2 Emissions");
+        });
+    </script>
+
+
+
+</body>
+</html>
